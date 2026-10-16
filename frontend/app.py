@@ -16,7 +16,7 @@ BACKEND_URL = get_config('BACKEND_URL', 'http://localhost:8000').rstrip('/')
 API_KEY = get_config('API_KEY', '')
 HEADERS = {'X-API-Key': API_KEY} if API_KEY else {}
 
-def call_api(method: str, path: str, timeout: int = 60, **kwargs):
+def call_api(method: str, path: str, timeout: int = 300, **kwargs):
     try:
         response = requests.request(
             method, f'{BACKEND_URL}{path}', headers=HEADERS, timeout=timeout, **kwargs
@@ -131,7 +131,7 @@ if question:
             result, error = call_api(
                 'POST',
                 '/query',
-                timeout=120,
+                timeout=300,
                 json={'question': question, 'doc_id': scope_doc_id},
             )
         if error:
