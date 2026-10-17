@@ -132,7 +132,7 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000
 streamlit run frontend/app.py --server.port 8501
 ```
 
-Open http://localhost:8501, upload a PDF in the sidebar, click **Index document**, then ask questions. Generate a sample document with `python scripts/make_sample_pdf.py`.
+Open https://docuquery-ai-kartik015.streamlit.app/, upload a PDF in the sidebar, click **Index document**, then ask questions. Generate a sample document with `python scripts/make_sample_pdf.py`.
 
 **Docker:** `docker compose up --build`
 
