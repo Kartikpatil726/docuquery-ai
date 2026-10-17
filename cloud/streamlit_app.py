@@ -8,7 +8,7 @@ import streamlit as st
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'backend'))
 
-# Secrets -> environment, BEFORE the backend reads its settings.
+# Secrets -> environment
 try:
     for _k in st.secrets:
         if isinstance(st.secrets[_k], (str, int, float)):
@@ -17,6 +17,8 @@ except Exception:
     pass
 os.environ.setdefault('EMBEDDING_PROVIDER', 'gemini')
 os.environ.setdefault('DATA_DIR', str(Path(tempfile.gettempdir()) / 'docuquery'))
+# Threshold thoda low rakha taaki related context search me drop na ho
+os.environ['MIN_SIMILARITY'] = '0.10'
 
 from google.genai import errors as genai_errors  # noqa: E402
 
@@ -43,7 +45,7 @@ def render_assistant(message: dict) -> None:
     c3.metric('Latency', f"{meta['latency_ms']} ms")
     st.progress(min(max(meta['confidence'], 0.0), 1.0))
     if not meta['answerable']:
-        st.caption('No supporting passage was found, so no sources are shown.')
+        st.caption('No direct match found in documents, showing related information.')
     for cite in meta['citations']:
         label = f"[{cite['source_id']}] {cite['filename']} · page {cite['page']} · match {cite['score']:.2f}"
         with st.expander(label):
@@ -102,11 +104,14 @@ with st.sidebar:
         st.rerun()
 
 st.title('Chat with your documents')
-st.caption('Answers come only from your uploaded PDFs, with page citations.')
+st.caption('Answers come from your uploaded PDFs, with related context.')
 
 for m in st.session_state.messages:
     with st.chat_message(m['role']):
-        render_assistant(m) if m['role'] == 'assistant' else st.markdown(m['content'])
+        if m['role'] == 'assistant':
+            render_assistant(m)
+        else:
+            st.markdown(m['content'])
 
 if not docs:
     st.info('Upload a PDF in the sidebar to begin.')
@@ -117,7 +122,7 @@ if question:
     with st.chat_message('user'):
         st.markdown(question)
     with st.chat_message('assistant'):
-        with st.spinner('Searching your documents...'):
+        with st.spinner('Thinking...'):
             try:
                 result = answer_question(question, scope_doc_id).model_dump()
                 reply = {'role': 'assistant', 'content': result['answer'], 'meta': result}
