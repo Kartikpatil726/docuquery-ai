@@ -9,6 +9,7 @@ from app.services.llm import get_llm
 from app.services.vector_store import get_vector_store
 
 log = logging.getLogger(__name__)
+log.warning('rag_pipeline: hybrid version loaded')
 
 SYSTEM_PROMPT = '''You are DocuQuery, a friendly, knowledgeable assistant that helps people with their uploaded documents.
 
@@ -25,7 +26,7 @@ def _elapsed_ms(started: float) -> int:
     return int((time.perf_counter() - started) * 1000)
 
 def _fallback(started: float, reason: str) -> QueryResponse:
-    log.info('Fallback answer used: %s', reason)
+    log.warning('Fallback answer used: %s', reason)
     return QueryResponse(
         answer=guardrails.FALLBACK_MESSAGE,
         answerable=False,
