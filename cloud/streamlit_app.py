@@ -18,7 +18,7 @@ except Exception:
 os.environ.setdefault('EMBEDDING_PROVIDER', 'gemini')
 os.environ.setdefault('DATA_DIR', str(Path(tempfile.gettempdir()) / 'docuquery'))
 # Threshold thoda low rakha taaki related context search me drop na ho
-os.environ['MIN_SIMILARITY'] = '0.10'
+os.environ['MIN_SIMILARITY'] = '0.0'
 
 from google.genai import errors as genai_errors  # noqa: E402
 
