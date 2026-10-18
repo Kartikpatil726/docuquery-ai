@@ -76,16 +76,15 @@ with st.sidebar:
     st.success(f'Ready · {store.count()} chunks indexed')
 
     st.subheader('Upload')
-    uploaded = st.file_uploader('Choose a Document (PDF, DOCX, PPTX)', type=['pdf', 'docx', 'pptx'])
+    uploaded = st.file_uploader('Choose a file', type=['pdf', 'docx', 'pptx'])
     if uploaded and st.button('Index document', type='primary'):
         data = uploaded.getvalue()
-        ext = Path(uploaded.name).suffix.lower()
         if len(data) > settings.max_upload_mb * 1024 * 1024:
             st.error(f'File is larger than {settings.max_upload_mb} MB.')
-        elif ext == '.pdf' and data[:5] != b'%PDF-':
-            st.error('This file is not a valid PDF.')
+        elif not (data[:5] == b'%PDF-' or data[:4] == b'PK\x03\x04'):
+            st.error('This file is not a valid PDF, DOCX or PPTX.')
         else:
-            tmp = Path(tempfile.gettempdir()) / f'{os.urandom(8).hex()}{ext}'
+            tmp = Path(tempfile.gettempdir()) / f'{os.urandom(8).hex()}{Path(uploaded.name).suffix.lower()}'
             tmp.write_bytes(data)
             try:
                 with st.spinner('Reading, chunking and embedding...'):
@@ -97,7 +96,7 @@ with st.sidebar:
             except DocumentLoadError as exc:
                 st.error(str(exc))
             except genai_errors.APIError as exc:
-                st.error(f'Embedding service failed: {exc}')
+                st.error(f'Embedding/OCR service failed: {exc}')
             finally:
                 tmp.unlink(missing_ok=True)
 
