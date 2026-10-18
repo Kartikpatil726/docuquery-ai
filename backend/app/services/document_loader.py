@@ -51,7 +51,7 @@ def _load_pdf(path: Path, max_pages: int) -> tuple[list[PageText], int, int]:
     for number, page in enumerate(reader.pages, start=1):
         text = clean_text(page.extract_text() or '')
         
-        # Scanned images fallback
+        # Scanned images fallback in PDF
         if not text:
             try:
                 import pytesseract
@@ -91,21 +91,35 @@ def _load_docx(path: Path) -> tuple[list[PageText], int, int]:
     except Exception as e:
         raise DocumentLoadError(f"Failed to read DOCX: {e}")
 
-def _extract_shape_text(shape) -> list[str]:
+def _extract_shape_text_and_images(shape) -> list[str]:
     chunks = []
+    # 1. Text Frame
     if shape.has_text_frame:
         for p in shape.text_frame.paragraphs:
             txt = p.text.strip()
             if txt:
                 chunks.append(txt)
+    # 2. Table
     if shape.has_table:
         for row in shape.table.rows:
             row_vals = [cell.text.strip() for cell in row.cells if cell.text.strip()]
             if row_vals:
                 chunks.append(" | ".join(row_vals))
-    if shape.shape_type == 6: # Group shape
+    # 3. Grouped Shapes
+    if shape.shape_type == 6:
         for sub_shape in shape.shapes:
-            chunks.extend(_extract_shape_text(sub_shape))
+            chunks.extend(_extract_shape_text_and_images(sub_shape))
+    # 4. Embedded Pictures (OCR Fallback)
+    if shape.shape_type == 13: # Picture shape
+        try:
+            import pytesseract
+            from PIL import Image
+            img = Image.open(io.BytesIO(shape.image.blob))
+            ocr_text = clean_text(pytesseract.image_to_string(img))
+            if ocr_text:
+                chunks.append(ocr_text)
+        except Exception:
+            pass
     return chunks
 
 def _load_pptx(path: Path) -> tuple[list[PageText], int, int]:
@@ -117,9 +131,9 @@ def _load_pptx(path: Path) -> tuple[list[PageText], int, int]:
         for idx, slide in enumerate(prs.slides, start=1):
             slide_text = []
             for shape in slide.shapes:
-                slide_text.extend(_extract_shape_text(shape))
+                slide_text.extend(_extract_shape_text_and_images(shape))
             
-            # Speaker notes extraction
+            # Speaker notes
             if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
                 note = slide.notes_slide.notes_text_frame.text.strip()
                 if note:
@@ -148,7 +162,7 @@ def load_document(path: Path, original_filename: str, max_pages: int = 500) -> L
 
     if not pages:
         raise DocumentLoadError(
-            'No text could be extracted from this document. If it only contains images or diagrams, please export/save it as a standard text document or readable PDF.'
+            'Is document me se text extract nahi ho paya. Kripya check karein ki images bilkul clear hon ya ise standard readable text PDF me export karke upload karein.'
         )
 
     return LoadedDocument(
