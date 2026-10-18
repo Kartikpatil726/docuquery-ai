@@ -24,7 +24,7 @@ from google.genai import errors as genai_errors  # noqa: E402
 
 from app.core.config import get_settings  # noqa: E402
 from app.services.document_loader import DocumentLoadError  # noqa: E402
-from app.services.ingestion import ingest_pdf  # noqa: E402
+from app.services.ingestion import ingest_document  # noqa: E402
 from app.services.llm import LLMError  # noqa: E402
 from app.services.rag_pipeline import answer_question  # noqa: E402
 from app.services.vector_store import get_vector_store  # noqa: E402
@@ -63,7 +63,7 @@ with st.sidebar:
     st.success(f'Ready · {store.count()} chunks indexed')
 
     st.subheader('Upload')
-    uploaded = st.file_uploader('Choose a PDF', type=['pdf'])
+    uploaded = st.file_uploader('Choose a Document (PDF, DOCX, PPTX)', type=['pdf', 'docx', 'pptx'])
     if uploaded and st.button('Index document', type='primary'):
         data = uploaded.getvalue()
         if len(data) > settings.max_upload_mb * 1024 * 1024:
@@ -75,7 +75,7 @@ with st.sidebar:
             tmp.write_bytes(data)
             try:
                 with st.spinner('Reading, chunking and embedding...'):
-                    result = ingest_pdf(tmp, uploaded.name)
+                    result = ingest_document(tmp, uploaded.name)
                 if result.already_indexed:
                     st.info('This document was already indexed.')
                 else:
