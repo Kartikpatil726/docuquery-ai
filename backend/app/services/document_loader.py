@@ -51,7 +51,7 @@ def _load_pdf(path: Path, max_pages: int) -> tuple[list[PageText], int, int]:
     for number, page in enumerate(reader.pages, start=1):
         text = clean_text(page.extract_text() or '')
         
-        # Fallback: Agar page me direct text na mile toh images check karo
+        # Scanned images fallback
         if not text:
             try:
                 import pytesseract
@@ -79,12 +79,34 @@ def _load_docx(path: Path) -> tuple[list[PageText], int, int]:
         for p in doc.paragraphs:
             if p.text.strip():
                 full_text.append(p.text.strip())
+        for table in doc.tables:
+            for row in table.rows:
+                row_text = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                if row_text:
+                    full_text.append(" | ".join(row_text))
         content = clean_text("\n\n".join(full_text))
         if not content:
             raise DocumentLoadError("Docx contains no usable text.")
         return [PageText(page=1, text=content)], 1, 0
     except Exception as e:
         raise DocumentLoadError(f"Failed to read DOCX: {e}")
+
+def _extract_shape_text(shape) -> list[str]:
+    chunks = []
+    if shape.has_text_frame:
+        for p in shape.text_frame.paragraphs:
+            txt = p.text.strip()
+            if txt:
+                chunks.append(txt)
+    if shape.has_table:
+        for row in shape.table.rows:
+            row_vals = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+            if row_vals:
+                chunks.append(" | ".join(row_vals))
+    if shape.shape_type == 6: # Group shape
+        for sub_shape in shape.shapes:
+            chunks.extend(_extract_shape_text(sub_shape))
+    return chunks
 
 def _load_pptx(path: Path) -> tuple[list[PageText], int, int]:
     try:
@@ -95,8 +117,14 @@ def _load_pptx(path: Path) -> tuple[list[PageText], int, int]:
         for idx, slide in enumerate(prs.slides, start=1):
             slide_text = []
             for shape in slide.shapes:
-                if hasattr(shape, "text") and shape.text.strip():
-                    slide_text.append(shape.text.strip())
+                slide_text.extend(_extract_shape_text(shape))
+            
+            # Speaker notes extraction
+            if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
+                note = slide.notes_slide.notes_text_frame.text.strip()
+                if note:
+                    slide_text.append(f"Notes: {note}")
+
             t = clean_text("\n".join(slide_text))
             if t:
                 pages.append(PageText(page=idx, text=t))
@@ -119,7 +147,9 @@ def load_document(path: Path, original_filename: str, max_pages: int = 500) -> L
         raise DocumentLoadError(f'Unsupported format: {ext}. Only PDF, DOCX, and PPTX are supported.')
 
     if not pages:
-        raise DocumentLoadError('No text could be extracted from this document.')
+        raise DocumentLoadError(
+            'No text could be extracted from this document. If it only contains images or diagrams, please export/save it as a standard text document or readable PDF.'
+        )
 
     return LoadedDocument(
         doc_id=compute_doc_id(path),
