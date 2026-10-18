@@ -1,5 +1,13 @@
-import os
 import sys
+
+# Patch sqlite3 for ChromaDB compatibility on Linux / Streamlit Cloud
+try:
+    __import__('pysqlite3')
+    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+except ImportError:
+    pass
+
+import os
 import tempfile
 from pathlib import Path
 
@@ -15,10 +23,15 @@ try:
             os.environ.setdefault(str(_k), str(st.secrets[_k]))
 except Exception:
     pass
+
 os.environ.setdefault('EMBEDDING_PROVIDER', 'gemini')
-os.environ.setdefault('DATA_DIR', str(Path(tempfile.gettempdir()) / 'docuquery'))
-# Threshold thoda low rakha taaki related context search me drop na ho
 os.environ['MIN_SIMILARITY'] = '0.0'
+
+@st.cache_resource
+def _data_dir() -> str:
+    return tempfile.mkdtemp(prefix='docuquery_')
+
+os.environ['DATA_DIR'] = _data_dir()
 
 from google.genai import errors as genai_errors  # noqa: E402
 
@@ -45,7 +58,7 @@ def render_assistant(message: dict) -> None:
     c3.metric('Latency', f"{meta['latency_ms']} ms")
     st.progress(min(max(meta['confidence'], 0.0), 1.0))
     if not meta['answerable']:
-        st.caption('No direct match found in documents, showing related information.')
+        st.caption('Answered from general knowledge. No supporting passage was found in the document.')
     for cite in meta['citations']:
         label = f"[{cite['source_id']}] {cite['filename']} · page {cite['page']} · match {cite['score']:.2f}"
         with st.expander(label):
@@ -66,12 +79,13 @@ with st.sidebar:
     uploaded = st.file_uploader('Choose a Document (PDF, DOCX, PPTX)', type=['pdf', 'docx', 'pptx'])
     if uploaded and st.button('Index document', type='primary'):
         data = uploaded.getvalue()
+        ext = Path(uploaded.name).suffix.lower()
         if len(data) > settings.max_upload_mb * 1024 * 1024:
             st.error(f'File is larger than {settings.max_upload_mb} MB.')
-        elif data[:5] != b'%PDF-':
+        elif ext == '.pdf' and data[:5] != b'%PDF-':
             st.error('This file is not a valid PDF.')
         else:
-            tmp = Path(tempfile.gettempdir()) / f'{os.urandom(8).hex()}.pdf'
+            tmp = Path(tempfile.gettempdir()) / f'{os.urandom(8).hex()}{ext}'
             tmp.write_bytes(data)
             try:
                 with st.spinner('Reading, chunking and embedding...'):
@@ -79,7 +93,7 @@ with st.sidebar:
                 if result.already_indexed:
                     st.info('This document was already indexed.')
                 else:
-                    st.success(f'Indexed {result.pages} pages into {result.chunks} chunks.')
+                    st.success(f'Indexed {result.pages} pages/slides into {result.chunks} chunks.')
             except DocumentLoadError as exc:
                 st.error(str(exc))
             except genai_errors.APIError as exc:
@@ -104,7 +118,7 @@ with st.sidebar:
         st.rerun()
 
 st.title('Chat with your documents')
-st.caption('Answers come from your uploaded PDFs, with related context.')
+st.caption('Answers come from your uploaded documents (PDF, DOCX, PPTX) with related context.')
 
 for m in st.session_state.messages:
     with st.chat_message(m['role']):
@@ -114,7 +128,7 @@ for m in st.session_state.messages:
             st.markdown(m['content'])
 
 if not docs:
-    st.info('Upload a PDF in the sidebar to begin.')
+    st.info('Upload a document in the sidebar to begin.')
 
 question = st.chat_input('Ask a question about your documents', disabled=not docs)
 if question:
@@ -122,7 +136,7 @@ if question:
     with st.chat_message('user'):
         st.markdown(question)
     with st.chat_message('assistant'):
-        with st.spinner('Thinking...'):
+        with st.spinner('Searching your documents...'):
             try:
                 result = answer_question(question, scope_doc_id).model_dump()
                 reply = {'role': 'assistant', 'content': result['answer'], 'meta': result}
